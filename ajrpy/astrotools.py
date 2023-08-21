@@ -13,7 +13,8 @@ from astropy.io import fits
 from astropy.coordinates import SkyCoord
 from astropy import units as u
 import datetime
-import generaltools as gt
+from . import generaltools as gt
+#import generaltools as gt
 
 def GalacticHeader(coords_in=None, header_in=None, frame_in='icrs'):
     """
