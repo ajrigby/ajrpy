@@ -170,9 +170,6 @@ def GalacticHeader(coords_in=None, header_in=None, frame_in='icrs'):
     return newheader
 
 
-
-
-
 def RMS(array, nan=True, **kwargs):
     """
     Purpose:
