@@ -13,8 +13,13 @@ from astropy.io import fits
 from astropy.coordinates import SkyCoord
 from astropy import units as u
 import datetime
-from . import generaltools as gt
-#import generaltools as gt
+
+# ============ Index: ======================================================= #
+# GalacticHeader
+# RMS
+# RoundUpToOdd
+
+# =========================================================================== #
 
 def GalacticHeader(coords_in=None, header_in=None, frame_in='icrs'):
     """
@@ -38,15 +43,15 @@ def GalacticHeader(coords_in=None, header_in=None, frame_in='icrs'):
     if (coords_in is not None) & (header_in is None):
         cenL, cenB, sizeL, sizeB, pixsize, bunit = coords_in
         centre = SkyCoord(l=cenL * u.degree, b=cenB * u.degree, frame='galactic')
-        datestring = (datetime.datetime.today()).strftime('%Y-%m-%d %X')
         newhdu = fits.PrimaryHDU()  # Initialise HDU with arbitrary 2D array
         hdulist = fits.HDUList([newhdu])
         newheader = hdulist[0].header
-        Lsize = int(gt.round_up_to_odd(sizeL * 3600 / pixsize))
-        Bsize = int(gt.round_up_to_odd(sizeB * 3600 / pixsize))
+        Lsize = int(RoundUpToOdd(sizeL * 3600 / pixsize))
+        Bsize = int(RoundUpToOdd(sizeB * 3600 / pixsize))
         newheader['NAXIS'] = 2
         newheader['NAXIS1'] = Lsize
         newheader['NAXIS2'] = Bsize
+        newheader['BITPIX'] = -32
         newheader['CTYPE1'] = "GLON-TAN"
         newheader['CTYPE2'] = "GLAT-TAN"
         newheader['CRVAL1'] = centre.l.degree
@@ -63,7 +68,6 @@ def GalacticHeader(coords_in=None, header_in=None, frame_in='icrs'):
             + " defined in 'Astronomy and Astrophysics', volume 376, page 359; " \
             + "bibcode 2001A&A...376..359H"
     elif (coords_in is None) & (header_in is not None):
-        print('Hello')
         newheader = header_in.copy()
         cenRA = header_in['CRVAL1'] * u.deg
         cenDec = header_in['CRVAL2'] * u.deg
@@ -75,16 +79,38 @@ def GalacticHeader(coords_in=None, header_in=None, frame_in='icrs'):
     else:
         raise Exception('Must give either coords_in or header_in, not both')
 
-    # if verbose:
-    #     print("\n	Returning header centered on coodinates %.3f, %.3f" %
-    #           (xcen, ycen))
-    #     print("	Size in degrees: %.3f x %.3f" % (xsize, ysize))
-    #     print("	Size in pixels: %i x %i" % (Xsize, Ysize))
-    #     print("	Central pixel coords: %i, %i" % (newheader['CRPIX1'],
-    #           newheader['CRPIX2']))
-    #     print("	Pixel size: %.3f arcsec" % pixsize)
-    #     print("	System: %s \n" % system)
-
+    datestring = (datetime.datetime.today()).strftime('%Y-%m-%d %X')
     newheader['HISTORY'] = 'Header created by ajrpy.astrotools ' + datestring
 
     return newheader
+
+
+def RMS(array, nan=True, **kwargs):
+    """
+    Purpose:
+        Returns the root-mean-square value of an array
+    Arguments:
+        Array - list, or numpy array, etc.
+        nan - boolean. If true, uses np.nanmean as opposed to np.mean
+        **kwargs for np.nanmean or np.mean
+    Returns:
+        RMS value
+
+    Examples:
+        To return a 2D RMS map of a data cube:
+            > rmsmap = generaltools.rms(cube, axis=0)
+        To return the overall RMS value of a data cube:
+            > rmsval = generaltools.rms(cube)
+    """
+    if nan:
+        return np.sqrt(np.nanmean(array**2, **kwargs))
+    else:
+        return np.sqrt(np.mean(array**2, **kwargs))
+    
+
+def RoundUpToOdd(f):
+    """
+    Purpose:
+        Round a floating point number up to the nearest odd integer
+    """
+    return np.ceil(f) // 2 * 2 + 1
