@@ -17,4 +17,6 @@ header = at.GalacticHeader((23.9, 0.05, 3.0, 2.0, 3.0, 'mJy/beam'))
 
 ## Functions
 
-`GalacticHeader` - Create a new Galactic header, or convert an existing header to Galactic coordinates
+`GalacticHeader` - Create a new Galactic header, or convert an existing header to Galactic coordinates  
+`RMS` - Return the RMS value or array for some input data  
+`RoundUpToOdd` - Rounds a value up to the nearest odd integer  
