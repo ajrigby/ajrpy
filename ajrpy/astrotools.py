@@ -7,19 +7,104 @@
 # Purpose: Contains various useful functions for astronomy applicatins
 #
 
-import numpy as np
-import matplotlib.pyplot as plt
 from astropy.io import fits
 from astropy.coordinates import SkyCoord
 from astropy import units as u
 import datetime
+import numpy as np
+import matplotlib.axes as maxes
+import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-# ============ Index: ======================================================= #
-# GalacticHeader
-# RMS
-# RoundUpToOdd
+# ============ Index ======================================================== #
+# Constants:
+# - fwhm2sig
+# - sig2fwhm
+# Functions:
+# - BeamArea
+# - ColBar
+# - CubeRMS
+# - GalacticHeader
+# - RMS
+# - RoundUpToOdd
+# ============ Constants ==================================================== #
 
-# =========================================================================== #
+fwhm2sig = (8 * np.log(2))**-0.5
+sig2fwhm = 1 / fwhm2sig
+
+# ============ Functions ==================================================== #
+
+
+def BeamArea(fwhm):
+    """
+    Purpose:
+        Give the area of a Gaussian beam with given fwhm
+    Arguments:
+        Beam FWHM
+    Returns:
+        Area, in units of units(FWHM)**2. Input as e.g. arcsec or pixels
+    Notes:
+    """
+    return fwhm**2. * np.pi / (4. * np.log(2.))
+
+
+def ColBar(fig, ax, im, label='', position='right', size="5%",
+           dividerpad=0.0, cbarpad=0.15, **kwargs):
+    """
+    Purpose:
+        Produces a decent default colour bar attached to the side of an image
+    Arguments:
+        fig - figure object
+        ax - axis object
+        im - imshow axis object
+        **kwags - keyword arguments for a fig.colorbar object
+    Optional arguments:
+        label - (string) label for the colour bar ['']
+        size - (string) size of the colorbar as perecentage ["5%"]
+        dividerpad - color bar padding [0.2] default from
+                     rcParams["figure.subplot.wspace"]
+        https://matplotlib.org/stable/api/_as_gen/mpl_toolkits.axes_grid1.axes_divider.AxesDivider.html#mpl_toolkits.axes_grid1.axes_divider.AxesDivider.append_axes
+        cbarpad - color bad padding [0.15 for vertical color bar]
+        https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.colorbar.html
+    Returns:
+        matplotlib.colorbar.Colorbar object
+    """
+    if (position == 'top') | (position == 'bottom'):
+        orientation = 'horizontal'
+    else:
+        orientation = 'vertical'
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes(position, size=size, pad=dividerpad,
+                              axes_class=maxes.Axes)
+    cbar = fig.colorbar(im, cax=cax, pad=cbarpad,
+                        orientation=orientation, **kwargs)
+    cbar.set_label(label)
+    if (position == 'top') | (position == 'bottom'):
+        cax.xaxis.set_ticks_position(position)
+        cax.xaxis.set_label_position(position)
+    cbar.ax.yaxis.set_tick_params(color='k')
+    cbar.ax.minorticks_off()
+    plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='k')
+    return cbar
+
+
+def CubeRMS(cube):
+    """
+    Purpose:
+        Returns an RMS map for a cube containing emission by inverting the
+        negative data values and assuming the noise is normally distributed
+        around zero.
+    Arguments:
+        cube - the data cube for which the RMS map is required
+    Returns
+        RMSmap
+    """
+    data = cube.copy()
+    data[data > 0] = np.nan
+    inverted_data = data * -1
+    combined_data = np.concatenate([data, inverted_data])
+    return RMS(combined_data, axis=0)
+
 
 def GalacticHeader(coords_in=None, header_in=None, frame_in='icrs'):
     """
@@ -83,6 +168,9 @@ def GalacticHeader(coords_in=None, header_in=None, frame_in='icrs'):
     newheader['HISTORY'] = 'Header created by ajrpy.astrotools ' + datestring
 
     return newheader
+
+
+
 
 
 def RMS(array, nan=True, **kwargs):

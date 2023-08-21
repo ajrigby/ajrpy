@@ -16,7 +16,6 @@ BB93a - Brand & Blitz (1993) rotation curve
 beamarea -
 beameff30m - returns beam efficiences for the IRAM 30-m telescope
 CentredDistanceMatrix -
-cbar - simplified color bar
 confidence_ellipse -
 confidence_ellipse2 -
 cursorindex - call after a figure to see data indices upon mouseover
@@ -343,44 +342,7 @@ def CentredDistanceMatrix(sizex, sizey):
     return np.sqrt((x - cenx)**2 + (y - ceny)**2)
 
 
-def cbar(fig, ax, im, label='', position='right', size="5%",
-         dividerpad=0.0, cbarpad=0.15, **kwargs):
-    """
-    Purpose:
-        Produces a decent default colour bar attached to the side of an image
-    Arguments:
-        fig - figure object
-        ax - axis object
-        im - imshow axis object
-        **kwags - keyword arguments for a fig.colorbar object
-    Optional arguments:
-        label - (string) label for the colour bar ['']
-        size - (string) size of the colorbar as perecentage ["5%"]
-        dividerpad - color bar padding [0.2] default from
-                     rcParams["figure.subplot.wspace"]
-        https://matplotlib.org/stable/api/_as_gen/mpl_toolkits.axes_grid1.axes_divider.AxesDivider.html#mpl_toolkits.axes_grid1.axes_divider.AxesDivider.append_axes
-        cbarpad - color bad padding [0.15 for vertical color bar]
-        https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.colorbar.html
-    Returns:
-        matplotlib.colorbar.Colorbar object
-    """
-    if (position == 'top') | (position == 'bottom'):
-        orientation = 'horizontal'
-    else:
-        orientation = 'vertical'
-    divider = make_axes_locatable(ax)
-    cax = divider.append_axes(position, size=size, pad=dividerpad,
-                              axes_class=maxes.Axes)
-    cbar = fig.colorbar(im, cax=cax, pad=cbarpad,
-                        orientation=orientation, **kwargs)
-    cbar.set_label(label)
-    if (position == 'top') | (position == 'bottom'):
-        cax.xaxis.set_ticks_position(position)
-        cax.xaxis.set_label_position(position)
-    cbar.ax.yaxis.set_tick_params(color='k')
-    cbar.ax.minorticks_off()
-    plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='k')
-    return cbar
+
 
 
 def clean_axes(ax):
@@ -1544,24 +1506,6 @@ def resolvedmass(Flux, freq, Td=15., beta=2.0, kappa0=0.12, freq0=1.2E12,
     if verbose:
         print("     Dust mass = %.3f Msol" % Mass)
     return Mass
-
-
-def rms(array, nan=True):
-    '''
-    Returns the root-mean-square value of an array containing nans
-    '''
-    if nan:
-        return np.sqrt(np.nanmean(array**2))
-    else:
-        return np.sqrt(np.mean(array**2))
-
-
-def round_up_to_odd(f):
-    """
-    Purpose:
-        Round a floating point number up to the nearest odd integer
-    """
-    return np.ceil(f) // 2 * 2 + 1
 
 
 def smoothcube(cube, sigma_smooth):
