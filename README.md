@@ -1,5 +1,5 @@
 # ajrpy
-A module containing generally useful functions for astronomy and data analysis
+A module containing generally useful functions for astronomy and data analysis. The package was written in Python 3.10.12, but should be compatible with any Python 3 version.
 
 ## Installation
 The simplest way to install this package is through pip:
@@ -19,6 +19,7 @@ lsize = 3.0 # degrees
 bsize = 2.0 # degrees
 pixsize = 3.0 # arcsec
 bunit = 'mJy/beam' # 'BUNIT' item for header gives pixel units
+
 header = at.GalacticHeader((lcen, bcen, lsize, bsize, pixsize, bunit))
 ```
 
