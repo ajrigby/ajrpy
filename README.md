@@ -4,12 +4,14 @@ A module containing generally useful functions for astronomy and data analysis. 
 ## Installation
 The simplest way to install this package is through pip:
 
-```pip install git+https://github.com/ajrigby/ajrpy.git```
+```zsh
+pip install git+https://github.com/ajrigby/ajrpy.git
+```
 
 ## Usage
 Most of the useful functions are located within the astrotools module, whhich can be used as e.g.
 
-```
+```python
 import ajrpy.astrotools as at
 
 # Create an image header in Galactic coordinates based on a tuple with 6 items:
