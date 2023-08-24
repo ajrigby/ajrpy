@@ -118,8 +118,8 @@ def CubeRMS(cube):
 def GalacticHeader(coords_in=None, header_in=None, frame_in='icrs'):
     """
     Purpose: 
-        Create a simpele 2D header in Galatic Coordinates. You can either
-        specify coords_in, or provide an equatorial header in header_in, which
+        Create a simple 2D header in Galatic Coordinates. You can either
+        specify coords_in, or provide an equatorial header as header_in, which
         will be converted to a Galactic equivalent.
 
     Arguments:
@@ -137,8 +137,25 @@ def GalacticHeader(coords_in=None, header_in=None, frame_in='icrs'):
     
     Returns:
         Header in Galactic coordinates
-    """
 
+    Examples:
+        1) Create a Galactic header from scratch:
+
+        import ajrpy.astrtools as at
+        
+        newheader = GalacticHeader(coords_in=(23.9, 0.0, 
+                                              3.0, 2.0, 
+                                              3.0, 'Jy/beam'))
+
+        2) Convert an existing Equatorial header
+
+        import ajrpy.astrtools as at
+        from astropy.io import fits
+
+        equatorial_header = fits.getheader('equatorial_image.fits')
+        galheader = GalacticHeader(header_in=equatorial_header, frame_in='FK5')
+            
+    """
     if (coords_in is not None) & (header_in is None):
         cenL, cenB, sizeL, sizeB, pixsize, bunit = coords_in
         centre = SkyCoord(l=cenL * u.degree, b=cenB * u.degree, frame='galactic')
