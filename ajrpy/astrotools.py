@@ -203,7 +203,7 @@ def GalacticHeader(coords_in=None, header_in=None, frame_in='icrs'):
 
 
 def reproject_Galactic(file_in, file_out=None, method="exact", write=True,
-                       verbose=False, ext=0, crop=True, **kwargs):
+                       verbose=False, ext=0, trim=True, **kwargs):
     """
     Purpose:
         Reproject an image from Equatorial to Galactic coordinates using the 
@@ -220,9 +220,10 @@ def reproject_Galactic(file_in, file_out=None, method="exact", write=True,
                     if the reproject is taking a long time, the "interp" method
                     could be used. Default is "exact".
         verbose   - boolean. Produces some print statements.
-        write     - booolean. Save the fits image to file?
-        ext       - the fits extension containing the data & header. Assumed
-                    to be extension 0 by default.
+        write     - boolean. Save the fits image to file?
+        ext       - the fits extension containing the data & header. Assumed to 
+                    be extension 0 by default.
+        trim      - boolean. Trim any border of nan-valued pixels from the array
         **kwargs  - keyword arguments passed to the reprojection method.
     
     Returns:
@@ -250,9 +251,9 @@ def reproject_Galactic(file_in, file_out=None, method="exact", write=True,
     else:
         raise Exception("Reproject method not recognised. Must be either 'exact' or 'interp'.")
     
-    if crop:
+    if trim:
         if verbose:
-            print('Cropping any nan padding from array')
+            print('Trimming any nan padding from array')
         mask = 1 * ~np.isnan(reprojected_data)
         axisX = np.sum(mask, axis=0)
         axisY = np.sum(mask, axis=1)
