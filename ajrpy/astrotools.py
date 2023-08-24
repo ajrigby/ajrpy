@@ -41,11 +41,12 @@ def BeamArea(fwhm):
     """
     Purpose:
         Give the area of a Gaussian beam with given fwhm
+
     Arguments:
         Beam FWHM
+
     Returns:
         Area, in units of units(FWHM)**2. Input as e.g. arcsec or pixels
-    Notes:
     """
     return fwhm**2. * np.pi / (4. * np.log(2.))
 
@@ -55,11 +56,13 @@ def ColBar(fig, ax, im, label='', position='right', size="5%",
     """
     Purpose:
         Produces a decent default colour bar attached to the side of an image
+
     Arguments:
         fig - figure object
         ax - axis object
         im - imshow axis object
-        **kwags - keyword arguments for a fig.colorbar object
+        **kwargs - keyword arguments for a fig.colorbar object
+
     Optional arguments:
         label - (string) label for the colour bar ['']
         size - (string) size of the colorbar as perecentage ["5%"]
@@ -68,6 +71,7 @@ def ColBar(fig, ax, im, label='', position='right', size="5%",
         https://matplotlib.org/stable/api/_as_gen/mpl_toolkits.axes_grid1.axes_divider.AxesDivider.html#mpl_toolkits.axes_grid1.axes_divider.AxesDivider.append_axes
         cbarpad - color bad padding [0.15 for vertical color bar]
         https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.colorbar.html
+   
     Returns:
         matplotlib.colorbar.Colorbar object
     """
@@ -87,6 +91,7 @@ def ColBar(fig, ax, im, label='', position='right', size="5%",
     cbar.ax.yaxis.set_tick_params(color='k')
     cbar.ax.minorticks_off()
     plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='k')
+
     return cbar
 
 
@@ -96,10 +101,12 @@ def CubeRMS(cube):
         Returns an RMS map for a cube containing emission by inverting the
         negative data values and assuming the noise is normally distributed
         around zero.
+
     Arguments:
         cube - the data cube for which the RMS map is required
-    Returns
-        RMSmap
+    
+    Returns:
+        A 2-D array that is the RMS map
     """
     data = cube.copy()
     data[data > 0] = np.nan
@@ -110,19 +117,24 @@ def CubeRMS(cube):
 
 def GalacticHeader(coords_in=None, header_in=None, frame_in='icrs'):
     """
-    Purpose: create a header in Galatic Coordinates.
+    Purpose: 
+        Create a simpele 2D header in Galatic Coordinates. You can either
+        specify coords_in, or provide an equatorial header in header_in, which
+        will be converted to a Galactic equivalent.
+
     Arguments:
-        coords_in: A tuple containing 6 elements:
-            cenL - Central Galactic Longitude in degrees
-            cenB - Central Galactic Latitude in degrees
-            sizeL - Array size in Longitude axis in degrees
-            sizeB - Array size in Latitude axis in degrees
-            pixsize - pixel size in arcseconds
-            bunit - unit of the intensity scale
+        coords_in: A tuple (cenL, cenB, sizeL, sizeB, pixsize, bunit) where:
+            cenL    = Central Galactic Longitude in degrees
+            cenB    = Central Galactic Latitude in degrees
+            sizeL   = Array size in Longitude axis in degrees
+            sizeB   = Array size in Latitude axis in degrees
+            pixsize = pixel size in arcseconds
+            bunit   = unit of the intensity scale
         header_in: If supplied with a header in equatorial coorinates,
                    return a similar header in Galactic coordinates
         frame_in: If using header_in, specify frame_in, if the frame is not 
                   ICRS. This is usually stored in the 'RADESYS' header card.
+    
     Returns:
         Header in Galactic coordinates
     """
@@ -167,7 +179,8 @@ def GalacticHeader(coords_in=None, header_in=None, frame_in='icrs'):
         raise Exception('Must give either coords_in or header_in, not both')
 
     datestring = (datetime.datetime.today()).strftime('%Y-%m-%d %X')
-    newheader['HISTORY'] = 'Header created by ajrpy.astrotools ' + datestring
+    newheader['HISTORY'] = 'Header created by ajrpy.astrotools.GalacticHeader '
+    newheader['HISTORY'] = 'Header created on ' + datestring
 
     return newheader
 
@@ -175,9 +188,9 @@ def GalacticHeader(coords_in=None, header_in=None, frame_in='icrs'):
 def reproject_Galactic(file_in, file_out=None, method="exact", write=True,
                        verbose=False, ext=0, crop=True, **kwargs):
     """
-    Reproject an image from Equatorial to Galactic coordinates using the 
-    reproject package:
-        https://reproject.readthedocs.io/en/stable/index.html
+    Purpose:
+        Reproject an image from Equatorial to Galactic coordinates using the 
+        reproject package: https://reproject.readthedocs.io/en/stable/index.html
 
     Arguments:
         file_in   - string. Name of the .fits file to reproject
@@ -194,6 +207,7 @@ def reproject_Galactic(file_in, file_out=None, method="exact", write=True,
         ext       - the fits extension containing the data & header. Assumed
                     to be extension 0 by default.
         **kwargs  - keyword arguments passed to the reprojection method.
+    
     Returns:
         reprojected_data - Array containing the reprojected data
         header_out       - The Galactic header
@@ -251,10 +265,12 @@ def RMS(array, nan=True, **kwargs):
     """
     Purpose:
         Returns the root-mean-square value of an array
+
     Arguments:
         Array - list, or numpy array, etc.
         nan - boolean. If true, uses np.nanmean as opposed to np.mean
         **kwargs for np.nanmean or np.mean
+    
     Returns:
         RMS value
 
@@ -272,7 +288,7 @@ def RMS(array, nan=True, **kwargs):
 
 def RoundUpToOdd(f):
     """
-    Purpose:
+    Returns:
         Round a floating point number up to the nearest odd integer
     """
     return np.ceil(f) // 2 * 2 + 1
