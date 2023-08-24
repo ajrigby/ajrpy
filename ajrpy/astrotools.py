@@ -238,7 +238,7 @@ def reproject_Galactic(file_in, file_out=None, method="exact", write=True,
 
     hdu_in = fits.open(file_in)
     header_in = hdu_in[ext].header
-    header_out = ajr.GalacticHeader(header_in=header_in)
+    header_out = GalacticHeader(header_in=header_in)
 
     if method == "interp":
         if verbose:
