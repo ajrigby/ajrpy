@@ -13,7 +13,6 @@ ajrectangle - rotated rectangular patch
 AzimuthalAverage -
 BB93 - Brand & Blitz (1993) rotation curve
 BB93a - Brand & Blitz (1993) rotation curve
-beamarea -
 beameff30m - returns beam efficiences for the IRAM 30-m telescope
 CentredDistanceMatrix -
 confidence_ellipse -
@@ -288,19 +287,6 @@ def BB93a(lon, lat, vel, R0=8.5 * u.kpc, Theta0=220 * u.km / u.s):
         return dnear.value, dfar.value
     else:
         return dnear, dfar
-
-
-def beamarea(beamfwhm):
-    """
-    Purpose:
-        Give the area of a Gaussian beam with given fwhm
-    Arguments:
-        Beam FWHM
-    Returns:
-        Area, in units of units(FWHM)**2. Input as e.g. arcsec or pixels
-    Notes:
-    """
-    return beamfwhm**2. * np.pi / (4. * np.log(2.))
 
 
 def beameff30m(freq):

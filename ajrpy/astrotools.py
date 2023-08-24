@@ -15,6 +15,7 @@ import numpy as np
 import matplotlib.axes as maxes
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from reproject import reproject_interp, reproject_exact
 
 # ============ Index ======================================================== #
 # Constants:
@@ -25,6 +26,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 # - ColBar
 # - CubeRMS
 # - GalacticHeader
+# - reproject_Galactic
 # - RMS
 # - RoundUpToOdd
 # ============ Constants ==================================================== #
@@ -168,6 +170,81 @@ def GalacticHeader(coords_in=None, header_in=None, frame_in='icrs'):
     newheader['HISTORY'] = 'Header created by ajrpy.astrotools ' + datestring
 
     return newheader
+
+
+def reproject_Galactic(file_in, file_out=None, method="exact", write=True,
+                       verbose=False, ext=0, crop=True, **kwargs):
+    """
+    Reproject an image from Equatorial to Galactic coordinates using the 
+    reproject package:
+        https://reproject.readthedocs.io/en/stable/index.html
+
+    Arguments:
+        file_in   - string. Name of the .fits file to reproject
+        file_out  - string. Specify the output filename. If not specified, the
+                    file will be written to the same location as the input file
+                    but with the suffix "_GAL"
+        method    - string. The reprojection method. Currently available options
+                    are either "exact" or "interp". The "exact" method is slower,
+                    and the difference between the two is generally minimal, so
+                    if the reproject is taking a long time, the "interp" method
+                    could be used. Default is "exact".
+        verbose   - boolean. Produces some print statements.
+        write     - booolean. Save the fits image to file?
+        ext       - the fits extension containing the data & header. Assumed
+                    to be extension 0 by default.
+        **kwargs  - keyword arguments passed to the reprojection method.
+    Returns:
+        reprojected_data - Array containing the reprojected data
+        header_out       - The Galactic header
+        
+        Also writes out the reprojected image to a .fits file if write=True.
+    """
+
+    if file_out is None:
+        file_out = file_in.replace('.fits', '_GAL.fits')
+
+    hdu_in = fits.open(file_in)
+    header_in = hdu_in[ext].header
+    header_out = ajr.GalacticHeader(header_in=header_in)
+
+    if method == "interp":
+        if verbose:
+            print('\nReprojecting using reproject_interp...')
+        reprojected_data, _ = reproject_interp(hdu_in, header_out)
+    elif method == "exact":
+        if verbose:
+            print('\nReprojecting using reproject_exact...')
+        reprojected_data, _ = reproject_exact(hdu_in, header_out)
+    else:
+        raise Exception("Reproject method not recognised. Must be either 'exact' or 'interp'.")
+    
+    if crop:
+        if verbose:
+            print('Cropping any nan padding from array')
+        mask = 1 * ~np.isnan(reprojected_data)
+        axisX = np.sum(mask, axis=0)
+        axisY = np.sum(mask, axis=1)
+        minY = np.where(axisY > 0)[0][0]
+        maxY = np.where(axisY > 0)[0][-1]
+        minX = np.where(axisX > 0)[0][0]
+        maxX = np.where(axisX > 0)[0][-1]
+
+        cropped_data = reprojected_data[minY:maxY + 1, minX:maxX + 1]
+
+        # Update the header accordingly
+        header_out['NAXIS1'] = cropped_data.shape[1]
+        header_out['NAXIS2'] = cropped_data.shape[0]
+        header_out['CRPIX1'] -= minX
+        header_out['CRPIX2'] -= minY
+
+        reprojected_data = cropped_data
+
+    if write:
+        # Write to file
+        fits.writeto(file_out, reprojected_data, header_out, overwrite=True)
+
+    return reprojected_data, header_out
 
 
 def RMS(array, nan=True, **kwargs):
