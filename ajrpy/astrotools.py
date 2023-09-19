@@ -16,6 +16,7 @@ import matplotlib.axes as maxes
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from reproject import reproject_interp, reproject_exact
+from scipy.optimize import curve_fit
 
 # ============ Index ======================================================== #
 # Constants:
@@ -25,10 +26,15 @@ from reproject import reproject_interp, reproject_exact
 # - BeamArea
 # - ColBar
 # - CubeRMS
+# - fit_Gaussian
 # - GalacticHeader
+# - Gaussian
+# - index2velocity
 # - reproject_Galactic
 # - RMS
 # - RoundUpToOdd
+# - vaxis
+# - velocity2index
 # ============ Constants ==================================================== #
 
 fwhm2sig = (8 * np.log(2))**-0.5
@@ -98,8 +104,8 @@ def ColBar(fig, ax, im, label='', position='right', size="5%",
 def CubeRMS(cube):
     """
     Purpose:
-        Returns an RMS map for a cube containing emission by inverting the
-        negative data values and assuming the noise is normally distributed
+        Returns an RMS map for a cube containing emission by taking only the
+        negative values, and assuming that the noise is normally distributed
         around zero.
 
     Arguments:
@@ -110,9 +116,32 @@ def CubeRMS(cube):
     """
     data = cube.copy()
     data[data > 0] = np.nan
-    inverted_data = data * -1
-    combined_data = np.concatenate([data, inverted_data])
-    return RMS(combined_data, axis=0)
+    # inverted_data = data * -1
+    # combined_data = np.concatenate([data, inverted_data])
+    return RMS(data, axis=0)
+
+
+def fit_Gaussian(array, mu0=None, std0=None, amp0=None, fixmu=False,
+                 return_cov=False):
+    if std0 is None:
+        std0 = np.nanstd(array)
+    if mu0 is None:
+        mu0 = np.nanmean(array)
+        
+    histrange = [-10 * std0, 10 * std0]
+    nbins = 1000
+    hist, edges = np.histogram(array, range=histrange, bins=nbins)
+    if amp0 is None:
+        amp0 = hist.max()
+    centres = 0.5 * (edges[:-1] + edges[1:])
+    if fixmu:
+        popt, pcov = curve_fit(lambda x, a: Gaussian(x, 0, std0, amp0), centres, hist)
+    else:
+        popt, pcov = curve_fit(Gaussian, centres, hist, p0=[0, std0, hist.max()])
+    if return_cov:
+        return popt, pcov
+    else:
+        return popt
 
 
 def GalacticHeader(coords_in=None, header_in=None, frame_in='icrs'):
@@ -200,6 +229,46 @@ def GalacticHeader(coords_in=None, header_in=None, frame_in='icrs'):
     newheader['HISTORY'] = 'Header created on ' + datestring
 
     return newheader
+
+
+def Gaussian(x, mu, sigma, amp=None):
+    """
+    Returns a Gaussian distribution of given mean, standard deviation and
+    (optionally) amplitude.
+
+    Arguments:
+        x     : float - list or numpy array for the 'x' values
+        mu    : float - mean value of the distribution
+        sigma : float - standard deviation
+        amp   : float - if given, gives the amplitude of the distribution. If 
+                not given, the distribution is normalised.
+
+    Returns:
+        Gaussian distribution. float.
+    """
+    term1 = 1 / (sigma * np.sqrt(2 * np.pi))
+    term2 = np.exp(-0.5 * ((x - mu) / sigma)**2)
+    if amp is None:
+        return term1 * term2
+    else:
+        return amp * term2
+    
+
+def index2velocity(index, header):
+    """
+    Purpose:
+        Find the velocity of a given index
+    Arguments:
+        index - index of velocity plane
+        header - header containing wcs information
+    Returns:
+        Velocity in header units
+    """
+    crpix = header['CRPIX3']
+    crval = header['CRVAL3']
+    cdelt = header['CDELT3']
+    velocity = cdelt * (index - crpix + 1) + crval
+    return velocity
 
 
 def reproject_Galactic(file_in, file_out=None, method="exact", write=True,
@@ -310,3 +379,37 @@ def RoundUpToOdd(f):
         Round a floating point number up to the nearest odd integer
     """
     return np.ceil(f) // 2 * 2 + 1
+
+
+def vaxis(header):
+    """
+    Purpose: return the velocity axis from a given header
+    """
+    NAX = header['NAXIS3']
+    CDELT = header['CDELT3']
+    CRPIX = header['CRPIX3']
+    CRVAL = header['CRVAL3']
+    vaxis = CDELT * (np.arange(NAX) - CRPIX + 1) + CRVAL
+
+    return vaxis * u.Unit(header['CUNIT3'])
+
+
+def velocity2index(velocity, header, returnvel=False):
+    """
+    Purpose:
+        Find the index of a given velocity.
+    Arguments:
+
+    Returns:
+        Includes an option to return the actual velocity for that index.
+    """
+    crpix = header['CRPIX3']
+    crval = header['CRVAL3']
+    cdelt = header['CDELT3']
+    naxis = header['NAXIS3']
+    index = int(crpix - 1 + (velocity - crval) / cdelt)
+    truevel = cdelt * (index - crpix + 1) + crval
+    if returnvel:
+        return index, truevel
+    else:
+        return index

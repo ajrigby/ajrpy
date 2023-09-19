@@ -978,27 +978,6 @@ def MJysr2mJybeam(beamfwhm):
     return 1 / mJybeam2MJysr(beamfwhm)
 
 
-def normal(x, mu, sigma, amp=None):
-    """
-    Returns a normal distribution of given mean, standard deviation and
-    (optionally) amplitude.
-
-    Parameters
-    ----------
-    x : list or numpy array for the 'x' values
-    mu : float - mean value of the distribution
-    sigma : flloat - standard deviation
-    amp : if given, gives the amplitude of the distribution. If not given,
-          the distribution is normalised such that its integral is 1. [None]
-    """
-    term1 = 1 / (sigma * np.sqrt(2 * np.pi))
-    term2 = np.exp(-0.5 * ((x - mu) / sigma)**2)
-    if amp is None:
-        return term1 * term2
-    else:
-        return amp * term2
-
-
 def nrtau(T1, T2, X12):
     """
     Date added:
@@ -1608,20 +1587,6 @@ def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
         'trunc({n},{a:.2f},{b:.2f})'.format(n=cmap.name, a=minval, b=maxval),
         cmap(np.linspace(minval, maxval, n)))
     return new_cmap
-
-
-def vaxis(header):
-    """
-    Purpose: return the velocity axis from a given header
-    """
-    NAX = header['NAXIS3']
-    CDELT = header['CDELT3']
-    CRPIX = header['CRPIX3']
-    CRVAL = header['CRVAL3']
-    vaxis = CDELT * (np.arange(NAX) - CRPIX + 1) + CRVAL
-
-    return vaxis * u.Unit(header['CUNIT3'])
-
 
 
 def velocity2index(velocity, header, returnvel=False):
