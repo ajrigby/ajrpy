@@ -9,32 +9,54 @@
 
 from astropy.io import fits
 from astropy.coordinates import SkyCoord
+from astropy.nddata import Cutout2D
+from astropy.wcs import WCS
+from astropy import constants as const
 from astropy import units as u
+
 import datetime
 import numpy as np
+
 import matplotlib.axes as maxes
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+from regions import Regions
 from reproject import reproject_interp, reproject_exact
 from scipy.optimize import curve_fit
+from sklearn.cluster import AgglomerativeClustering
 
 # ============ Index ======================================================== #
 # Constants:
-# - fwhm2sig
-# - sig2fwhm
+#   fwhm2sig
+#   sig2fwhm
 # Functions:
-# - BeamArea
-# - ColBar
-# - CubeRMS
-# - fit_Gaussian
-# - GalacticHeader
-# - Gaussian
-# - index2velocity
-# - reproject_Galactic
-# - RMS
-# - RoundUpToOdd
-# - vaxis
-# - velocity2index
+#   BeamArea - calculates the area of a Gaussian beam
+#   ColBar - wrapper for making tidy colour bars
+#   CubeRMS
+#   ds9region_to_mask - converts a ds9 region to a binary mask given a header
+#   fit_Gaussian
+#   friends_of_friends
+#   GalacticHeader - creates a 2D Galactic coordinate header, or converts ICRS
+#   GalactocentricDistance - calculate RGC given l,b,v or l,b,d
+#   Gaussian
+#   get_aspect
+#   index2vel - converts an array index to a velocity given a cube header
+#   Jy2K - converts Jansky per beam to Kelvin
+#   K2Jy - converts Kelvin to Jansky per beam
+#   planck - returns Planck function as float in units of MJy/sr
+#   Planck - returns Planck function as astropy quantity
+#   pointflux - calculate the flux density of a point mass
+#   pointmass - calculate the point mass for a given flux density
+#   reproject_Galactic
+#   RMS - returns the root mean square value 
+#   RotationCurve - give the value of the rotation velocity given R_GC
+#   RoundUpToOdd
+#   smoothimage
+#   velaxis - generates an array of velocities from a cube header
+#   vel2index - converts an array index to a velocity given a cube header
+#   wcscutout
+
 # ============ Constants ==================================================== #
 
 fwhm2sig = (8 * np.log(2))**-0.5
@@ -58,7 +80,7 @@ def BeamArea(fwhm):
 
 
 def ColBar(fig, ax, im, label='', position='right', size="5%",
-           dividerpad=0.0, cbarpad=0.15, **kwargs):
+           dividerpad=0.0, cbarpad=0.15, hide=False, **kwargs):
     """
     Purpose:
         Produces a decent default colour bar attached to the side of an image
@@ -97,6 +119,8 @@ def ColBar(fig, ax, im, label='', position='right', size="5%",
     cbar.ax.yaxis.set_tick_params(color='k')
     cbar.ax.minorticks_off()
     plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='k')
+    if hide:
+        cbar.remove()
 
     return cbar
 
@@ -121,6 +145,35 @@ def CubeRMS(cube):
     return RMS(data, axis=0)
 
 
+def ds9region_to_mask(regionfile, header):
+    """
+    Converts a ds9 region (.reg file) to a 2D mask
+    """
+    # Read in DS9 region using the 'regions' package
+    region = Regions.read(regionfile)[0]
+
+    # Work out how large the image or cube is
+    nx = header['NAXIS1']
+    ny = header['NAXIS2']
+
+    # Read the WCS information from the header
+    wcs = WCS(header)
+
+    # Make array of 2D pixel coordinates
+    xv, yv = np.meshgrid(np.arange(nx), np.arange(ny))
+
+    # Convert these to Sky Coordinates
+    coords = wcs.celestial.all_pix2world(xv.ravel(), yv.ravel(), 0)
+    SkyCoords = SkyCoord(coords[0] * u.deg, coords[1] * u.deg, frame='galactic')
+
+    # Check if the list of pixel coordinates fall within the region
+    contains_coords = region.contains(SkyCoords, wcs=wcs.celestial)
+
+    # Reshape the result into 2D image
+    mask = contains_coords.reshape(nx, ny) * 1.0
+    return mask
+
+
 def fit_Gaussian(array, mu0=None, std0=None, amp0=None, fixmu=False,
                  return_cov=False):
     if std0 is None:
@@ -142,6 +195,32 @@ def fit_Gaussian(array, mu0=None, std0=None, amp0=None, fixmu=False,
         return popt, pcov
     else:
         return popt
+    
+
+def friends_of_friends(data, linking_length):
+    """
+    Performs a simple friends-of-friends matching where data points are joined
+    if they fall within some linking length of a neighbour. This produces the
+    same results as TOPCAT's Internal Match using the N-d Cartesian Anisotropic
+    algorithms.
+
+    Arguments:
+        data: a list of coordinates for each axis, e.g. [glon, glat, vlsr]
+              The list is of N dimensions and M data points.
+        linking_length: list of search tolerances in each axis, in the same
+            units as data. E.g. [0.0008, 0008, 0.4]. Must have N dimensions.
+            This is equivalent to the "Error in X/Y/Z" function in TOPCAT.
+    Returns:
+        labels: A list of size M containing the cluster ID for each data point
+    """
+    data_in = np.array(data) / np.array(linking_length).reshape(-1, 1)
+
+    clusterer = AgglomerativeClustering(n_clusters=None, linkage='single',
+                                        distance_threshold=1)
+    clusters = clusterer.fit(data_in.T)
+    GroupID = clusters.labels_
+    GroupSize = np.array([len(np.where(GroupID == x)[0]) for x in GroupID])
+    return GroupID, GroupSize
 
 
 def GalacticHeader(coords_in=None, header_in=None, frame_in='icrs'):
@@ -231,6 +310,50 @@ def GalacticHeader(coords_in=None, header_in=None, frame_in='icrs'):
     return newheader
 
 
+def GalactocentricDistance(glon, dist=None, vlsr=None, 
+                           R0=8.15 * u.kpc, theta0=236 * u.km / u.s):
+    """
+    Return the Galactocentric distance of a source given l and either
+    distance or velocity. Assumes b is zero (or close enough).
+
+    Arguments:
+        glon
+      # glat
+        dist
+        vlsr
+
+    Returns:
+        Galactocentric distance in kpc
+
+    """
+    glon *= u.deg
+    vlsr *= u.km / u.s
+    if dist is not None:
+        # Cosine rule
+        RGC = np.sqrt(R0**2 + dist**2 - 2 * R0 * dist * np.cos(glon))
+    elif vlsr is not None:
+        # Equation 3 from Binney & Tremaine (1991):
+        # v_r = [theta(R) / R + theta0/R0] * R0 * sin(glon)
+        #
+        # Rearranging we get:
+        # v_r / (R0 * sin(glon)) + theta0/R0 = theta(R) / R
+        #
+        Rrange = np.linspace(0, 50, 10001) * u.kpc
+        Rvels = (np.array([RotationCurve(r.value).value for r in Rrange]) * 
+                 u.km / u.s)
+        RHS = Rvels / Rrange
+        
+        # Rearranging equation 3 of Binney & Tremaine 1991
+        LHS = vlsr / (R0 * np.sin(glon)) + theta0 / R0
+
+        RGC = Rrange[np.nanargmin(np.abs(LHS - RHS))]
+    else:
+        raise Exception('Must give either dist or vlsr')
+
+    return RGC
+
+
+
 def Gaussian(x, mu, sigma, amp=None):
     """
     Returns a Gaussian distribution of given mean, standard deviation and
@@ -254,7 +377,23 @@ def Gaussian(x, mu, sigma, amp=None):
         return amp * term2
     
 
-def index2velocity(index, header):
+def get_aspect(ax=None):
+    """
+    Gets the aspect ratio of a pair of axes
+    """
+    if ax is None:
+        ax = plt.gca()
+    fig = ax.figure
+
+    ll, ur = ax.get_position() * fig.get_size_inches()
+    width, height = ur - ll
+    axes_ratio = height / width
+    aspect = axes_ratio / ax.get_data_ratio()
+
+    return aspect
+    
+
+def index2vel(index, header):
     """
     Purpose:
         Find the velocity of a given index
@@ -269,6 +408,186 @@ def index2velocity(index, header):
     cdelt = header['CDELT3']
     velocity = cdelt * (index - crpix + 1) + crval
     return velocity
+
+
+def Jy2K(data, freq, hpbw):
+    """
+    Converts an astropy quantity from units of Jy (or similar) to K
+    """
+    beamarea = 2 * np.pi * (hpbw / np.sqrt(8 * np.log(2)))**2
+    equiv = u.brightness_temperature(frequency=freq, beam_area=beamarea)
+    return data.to(u.K, equivalencies=equiv)
+
+
+def K2Jy(data, freq, hpbw):
+    """
+    Converts an astropy quantity from units of K to units of Jy
+    """
+    beamarea = 2 * np.pi * (hpbw / np.sqrt(8 * np.log(2)))**2
+    equiv = u.brightness_temperature(frequency=freq, beam_area=beamarea)
+    return data.to(u.Jy, equivalencies=equiv)
+
+
+def planck(nu, T):
+    """
+    Date added:
+        6th September 2016
+    Purpose:
+        Return the Planck black-body function
+    Arguments:
+        p_nu    - Frequency at which to calculate intensity
+        p_t     - Temperature of the black body
+    Returns:
+        Specific intensity at the given frequency in units of MJy/sr
+    """
+    # In units of W sr-1 m-2 Hz-1
+    P = ((2 * const.h.value * nu**3) / (const.c.value**2)) * \
+        (1 / (np.exp(const.h.value * nu / (const.k_B.value * T)) - 1))
+    P /= 1E-26     # To convert to Jy sr-1
+    P /= 1E6       # To convert to MJy sr-1, /1E-26 / 1E6
+    return P
+
+
+def Planck(freq, temp, unit='Jy'):
+    """
+    Calculate the Planck function using astropy units
+    """
+    if type(freq) == u.Quantity:
+        freq = freq.to('Hz')
+    else:
+        freq *= u.Hz
+    if type(temp) == u.Quantity:
+        temp = temp.to('K')
+    else:
+        temp *= u.K
+    B = ((2 * const.h * freq**3) / const.c**2) \
+        * (1 / (np.exp(const.h * freq / (const.k_B * temp)) - 1))
+    if type(freq) == u.Quantity:
+        return B.to(unit) / u.sr
+    else:
+        return (B.to(unit) / u.sr).value
+    
+
+def pointflux(Mass, freq, d=1 * u.kpc, Td=15 * u.K, beta=2, 
+              g2d=100, kappa0=0.12 * u.cm**2 / u.g, freq0=1200 * u.GHz,
+              verbose=True):
+    """
+    Date added:
+        9th March 2018
+    Purpose:
+        Calculate the flux density for a given point source mass
+    Arguments:
+        - Mass [Msol]
+        - Freq [Hz]
+        - Dust temperature [K, default = 15 K]
+        - Dust emissivity spectral index, beta [default = 2]
+        - Dust opacity normalisation, kappa0 [cm2 g-1, default = 0.12 cm2 g-1]
+        - Distance [pc]
+    Returns:		Mass per beam of a point source with those properties
+    """
+    if type(Mass) != u.quantity.Quantity:
+        Mass *= u.Msun
+    if type(freq) != u.quantity.Quantity:
+        freq *= u.GHz
+    if type(Td) != u.quantity.Quantity:
+        Td *= u.K
+    if type(kappa0) != u.quantity.Quantity:
+        kappa0 *= u.cm**2 / u.g
+    if type(d) != u.quantity.Quantity:
+        d *= u.pc
+    if type(freq0) != u.quantity.Quantity:
+        freq0 *= u.GHz   
+
+    wav = (const.c / freq).to('mm')
+    wav0 = (const.c / freq0).to('mm')
+    kappa = (kappa0 * (freq / freq0)**beta).to('cm2 g-1')
+    P = Planck(freq, Td) * u.sr
+    flux = (Mass * kappa * P / d**2).to('mJy')
+
+    if flux.value > 1000:
+        flux.to('Jy')
+    if flux.value < 10:
+        flux.to('uJy')
+
+    if verbose:
+        print(" Point-mass sensitivity calculation assuming:")
+        print(f"     Flux sensitivity = {flux:.1f}")
+        print(f"     Frequency = {freq:.0f}")
+        print(f"     Wavelength = {wav:.2f}")
+        print(f"     Temperature = {Td:.1f}")
+        print(f"     Beta = {beta:.1f}")
+        print(f"     Dust opacity = {kappa:.2e}")
+        print(f"     Dust absorption coefficient = {kappa0:.2f} at")
+        print(f"     Reference frequency = {freq0}")
+        print(f"     Reference wavelength = {wav0:.3f}")
+        print(f"     Distance = {d:.3f}")
+        print(f"     Dust mass = {Mass:.3f}")
+
+    return flux
+
+
+def pointmass(flux, freq, d=1 * u.kpc, Td=15 * u.K, beta=2, 
+              g2d=100, kappa0=12.0 * u.cm**2 / u.g, freq0=1.2 * u.THz,
+              verbose=True,):
+    """
+    Date added:
+        9th March 2018
+    Purpose:
+        Calculate the point source mass for a given flux density
+    Arguments:
+        - flux: Flux density [Jy]
+        - freq: Frequency [GHz]
+    Keyword arguments:
+        - beta: Dust emissivity spectral index [default = 2]
+        - Dust temperature [K, default = 15 K]
+        - Dust opacity normalisation, kappa0 [cm2 g-1, default = 0.12 cm2 g-1]
+        - Reference frequency for kappa0
+        - Distance [pc]
+    Notes:
+        - The kappa0 value assumes a gas-to-dust mass ratio of 100.
+        - References: Hildebrand 1983 Table 1 for kappa0
+    Returns:
+        Mass per beam of a point source with those properties
+    """
+    if type(flux) != u.quantity.Quantity:
+        flux *= u.Jy
+    if type(freq) != u.quantity.Quantity:
+        freq *= u.GHz
+    if type(Td) != u.quantity.Quantity:
+        Td *= u.K
+    if type(kappa0) != u.quantity.Quantity:
+        kappa0 *= u.cm**2 / u.g
+    if type(d) != u.quantity.Quantity:
+        d *= u.pc
+    if type(freq0) != u.quantity.Quantity:
+        freq0 *= u.GHz   
+    wav = (const.c / freq).to('mm')
+    wav0 = (const.c / freq0).to('mm')
+    kappa = (kappa0 * (freq / freq0)**beta).to('cm2 g-1')
+    Mass = ((d**2 / u.sr)  * flux * g2d / (kappa * Planck(freq, Td))).to('Msun')
+    if verbose:
+        print("\n     Point-like dust mass calculation assuming:")
+        print("     ===============================")
+        if flux < 0.1 * u.mJy:
+            print(f"     Flux = {flux.to('uJy')}")
+        elif flux < 0.1 * u.Jy:
+            print(f"     Flux = {flux.to('mJy')}")
+        print(f"     Frequency = {freq.to('GHz'):.1f}")
+        if wav < 1 * u.mm:
+            print(f"     Wavelength = {wav.to('um'):.3f}")
+        else:
+            print(f"     Wavelength = {wav.to('mm'):.3f}")
+        print(f"     Temperature = {Td:.2f}")
+        print(f"     Beta = {beta:.2f}")
+        print(f"     gas to dust mass ratio = {g2d}")
+        print(f"     kappa = {kappa.to('cm2 g-1'):.5f}")
+        print(f"     kappa_0 = {kappa0:.2f} at")
+        print(f"     Reference frequency = {freq0.to('GHz'):.1f}")
+        print(f"     Reference wavelength = {wav0:.3f}")
+        print(f"     Distance = {d:.1f}")
+        print("     ===============================")
+        print(f"     Dust mass = {Mass:.3f}\n")
+    return Mass
 
 
 def reproject_Galactic(file_in, file_out=None, method="exact", write=True,
@@ -373,6 +692,42 @@ def RMS(array, nan=True, **kwargs):
         return np.sqrt(np.mean(array**2, **kwargs))
     
 
+def RotationCurve(RGC, a2=0.96, a3=1.62, R0=8.15):
+    """
+    Disk plus halo parameterization of the rotation curve of Persic et al. 1996
+    Adapted from the FORTRAN routine listed in Appendix B of Reid et al. (2019)
+    Arguments:
+        RGC - Galactocentric radius in kpc
+        a2 - Ropt/Ro where Ropt=3.2*R_scalelength enclosing 83% of light
+        a3 - 1.5*(L/Lstar)**(1/5)
+        R0 - R0 in kpc
+    Returns:
+        Circular rotation speed at RGC in km/s
+    """
+    lam = (a3 / 1.5)**5  # L/Lstar
+    Ropt = a2 * R0 
+    rho = RGC / Ropt 
+
+    # Calculate Tr... 
+    term1 = 200. * lam**0.41
+
+    top = 0.75 * np.exp(-0.4 * lam)
+    bot = 0.47 + 2.25 * lam**0.4 
+    term2 = np.sqrt(0.80 + 0.49 * np.log10(lam) + (top / bot))
+    
+    top = 1.97 * rho ** 1.22 
+    bot = (rho**2 + 0.61) ** 1.43 
+    term3 = (0.72 + 0.44 * np.log10(lam)) * (top / bot) 
+    
+    top = rho**2 
+    bot = rho**2+2.25 * lam**0.4 
+    term4 = 1.6 * np.exp(-0.4 * lam) * (top / bot) 
+    
+    Tr= (term1 / term2) * np.sqrt(term3 + term4) # km/s 
+    
+    return Tr * u.km / u.s
+    
+
 def RoundUpToOdd(f):
     """
     Returns:
@@ -381,7 +736,46 @@ def RoundUpToOdd(f):
     return np.ceil(f) // 2 * 2 + 1
 
 
-def vaxis(header):
+def smoothimage(image, fwhmin, fwhmout, pixsize, rescale=False, fft=False,
+                allow_huge=False, verbose=False):
+    """
+    Purpose:
+    Returns an image smoothed to the desired resolution
+    Arguments:
+        fwhmin - resolution of input image
+        fwhmout - desired smoothed resolution
+        pixsize - pixel size.
+        rescale -  If true, rescale [per beam] units to account for new
+                    effective beamsize (previously 'fixunits')
+    Returns:
+    Notes:
+    fwhmin, fwhmout and pixsize should all have the same units e.g. arcsec
+    - Not yet fully consistent with accepting both astropy quantities and
+    regular arrays for all arguments...
+    """
+
+    sigpix = np.sqrt(fwhmout**2. - fwhmin**2.) * fwhm2sig / pixsize
+    if fft:
+        from astropy.convolution import Gaussian2DKernel, convolve_fft
+        if verbose:
+            print('\n   ajrpy.smoothimage: using FFT convolution\n')
+        smoothedimage = convolve_fft(image, Gaussian2DKernel(sigpix),
+                                     allow_huge=allow_huge)
+    else:
+        from astropy.convolution import Gaussian2DKernel, convolve
+        if verbose:
+            print('\n   ajrpy.smoothimage: using standard convolution\n')
+        smoothedimage = convolve(image, Gaussian2DKernel(sigpix),
+                                 boundary='extend')
+    if rescale:
+        if type(fwhmin) == u.Quantity:
+            smoothedimage *= (fwhmout / fwhmin).value**2
+        else:
+            smoothedimage *= (fwhmout / fwhmin)**2
+    return smoothedimage
+
+
+def velaxis(header):
     """
     Purpose: return the velocity axis from a given header
     """
@@ -394,7 +788,7 @@ def vaxis(header):
     return vaxis * u.Unit(header['CUNIT3'])
 
 
-def velocity2index(velocity, header, returnvel=False):
+def vel2index(velocity, header, returnvel=False):
     """
     Purpose:
         Find the index of a given velocity.
@@ -413,3 +807,26 @@ def velocity2index(velocity, header, returnvel=False):
         return index, truevel
     else:
         return index
+    
+
+def wcscutout(map_in, wcs_in, box, frame='galactic'):
+    """
+    Purpose:
+        Cutout a region from a galactic map, and return the cutout and the
+        corresponding wcs object
+    Arguments:
+        map_in  - map to take cutout from
+        wcs_in  - corresponding wcs object
+        box - [cen1, cen2, size1, size2] list where:
+            cen1, cen2 - coordinates of centre point [degrees]
+            size1, size2   - width of cutout in axes 1 and 2 [degrees]
+        frame - give the wcs frame to use. Default is 'galactic'
+    Returns:
+        map_cutout, wcs_cutout
+    """
+    cenl, cenb, sizel, sizeb = box
+    cutcen = SkyCoord(cenl * u.degree, cenb * u.degree, frame=frame)
+    cutsize = u.Quantity((sizeb, sizel), u.degree)
+    cutout = Cutout2D(map_in, cutcen, cutsize, wcs=wcs_in)
+
+    return cutout.data, cutout.wcs
