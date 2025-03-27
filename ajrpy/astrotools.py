@@ -17,6 +17,7 @@ from astropy import units as u
 import datetime
 import numpy as np
 
+import matplotlib as mp
 import matplotlib.axes as maxes
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -36,6 +37,7 @@ from sklearn.cluster import AgglomerativeClustering
 #   CubeRMS
 #   ds9region_to_mask - converts a ds9 region to a binary mask given a header
 #   fit_Gaussian
+#   fix_imshow_transform - fix imshow issues with reflections from transform
 #   friends_of_friends
 #   GalacticHeader - creates a 2D Galactic coordinate header, or converts ICRS
 #   GalactocentricDistance - calculate RGC given l,b,v or l,b,d
@@ -195,6 +197,29 @@ def fit_Gaussian(array, mu0=None, std0=None, amp0=None, fixmu=False,
         return popt, pcov
     else:
         return popt
+
+
+def fix_imshow_transform(im, ax, wcs):
+    """
+    Performs a fix to an axis object where an image is being shown with a 
+    different wcs than the axes using a transform. If the image has a border of
+    nans, the default behaviour results in strange additional images.
+
+    This fix should work OK for small-scale images, where sky distortions are
+    minimal, otherwise pcolormesh should be used. See:
+        https://github.com/astropy/astropy/issues/14420
+              
+    Arguments:
+            im - an imshow object
+            ax - the axis object to which the imshow was added
+            wcs - the wcs of image to transform
+    """
+    data = im.get_array().data
+    w = data.shape[1]
+    h = data.shape[0]
+    path = mp.path.Path([[-0.5, -0.5], [w - 0.5, -0.5], [w - 0.5, h - 0.5], 
+                         [-0.5, h - 0.5], [-0.5, -0.5]])
+    im.set_clip_path(path, transform=ax.get_transform(wcs))
     
 
 def friends_of_friends(data, linking_length):
@@ -391,6 +416,31 @@ def get_aspect(ax=None):
     aspect = axes_ratio / ax.get_data_ratio()
 
     return aspect
+
+
+def hessian(x):
+    """
+    Calculate the hessian matrix with finite differences
+    Parameters:
+       - x : ndarray
+    Returns:
+       an array of shape (x.dim, x.ndim) + x.shape
+       where the array[i, j, ...] corresponds to the second derivative x_ij
+    Source:
+    https://stackoverflow.com/questions/31206443/numpy-second-derivative-of-a-ndimensional-array
+    """
+    x_grad = np.gradient(x) 
+    hessian = np.empty((x.ndim, x.ndim) + x.shape, dtype=x.dtype) 
+    for k, grad_k in enumerate(x_grad):
+        # iterate over dimensions
+        # apply gradient again to every component of the first derivative.
+        tmp_grad = np.gradient(grad_k) 
+        for l, grad_kl in enumerate(tmp_grad):
+            hessian[k, l, :, :] = grad_kl
+    return hessian
+
+x = np.random.randn(100, 100, 100)
+hessian(x)
     
 
 def index2vel(index, header):
@@ -412,7 +462,13 @@ def index2vel(index, header):
 
 def Jy2K(data, freq, hpbw):
     """
-    Converts an astropy quantity from units of Jy (or similar) to K
+    Purpose:
+        Converts an astropy quantity from units of Jy (or similar) to K
+    Arguments:
+        data - data value (in u.Jy or equivalent)
+        freq - frequncy of observations (in u.Hz or equivalent)
+        hpbw - half power beamwidth (in u.deg or equivalent)
+
     """
     beamarea = 2 * np.pi * (hpbw / np.sqrt(8 * np.log(2)))**2
     equiv = u.brightness_temperature(frequency=freq, beam_area=beamarea)
@@ -426,6 +482,34 @@ def K2Jy(data, freq, hpbw):
     beamarea = 2 * np.pi * (hpbw / np.sqrt(8 * np.log(2)))**2
     equiv = u.brightness_temperature(frequency=freq, beam_area=beamarea)
     return data.to(u.Jy, equivalencies=equiv)
+
+
+def OH5(wav, log=True, scaledown=1.0):
+    """
+    Purpose:
+        Returns a value of Ossenkopf & Henning (1994) dust opacity from Table 1 column 5.
+    Arguments:
+        wav       - wavelength (in um) at which to return kappa
+        log       - if True, interpolate in log-space, or else interpolate 
+                    linearly
+        scaledown - scale the resulting kappa by this factor. Kauffmann+10 
+                    suggest a value of 1.5. Schuller et al. 2009 do not use 
+                    this for ATLASGAL, so a default value of 1.0 is used here 
+                    to not scale down.
+    """
+    wavelength0 = np.array([54.1, 63.1, 73.6, 85.8, 
+                           100, 117, 136, 158, 185, 
+                           226, 350, 500, 700, 1000, 1300])
+    kappa0 = np.array([2.8E2, 2.11E2, 1.58E2, 1.18E2, 
+                      8.65E1, 6.75E1, 5.25E1, 4.09E1, 3.07E1, 
+                      2.17E1, 1.01E1, 5.04E0, 2.57E0, 1.37E0, 8.99E-1])
+    if log:
+        kappa = 10**np.interp(np.log10(wav), np.log10(wavelength0), 
+                            np.log10(kappa0))
+    else:
+        kappa = np.interp(wav, wavelength0, kappa0)
+    return kappa / scaledown
+
 
 
 def planck(nu, T):
@@ -788,7 +872,7 @@ def velaxis(header):
     return vaxis * u.Unit(header['CUNIT3'])
 
 
-def vel2index(velocity, header, returnvel=False):
+def vel2index(velocity, header, returnvel=False, returnint=True):
     """
     Purpose:
         Find the index of a given velocity.
@@ -801,7 +885,9 @@ def vel2index(velocity, header, returnvel=False):
     crval = header['CRVAL3']
     cdelt = header['CDELT3']
     naxis = header['NAXIS3']
-    index = int(crpix - 1 + (velocity - crval) / cdelt)
+    index = crpix - 1 + (velocity - crval) / cdelt
+    if returnint:
+        index = int(index)
     truevel = cdelt * (index - crpix + 1) + crval
     if returnvel:
         return index, truevel
