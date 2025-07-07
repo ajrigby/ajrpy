@@ -445,8 +445,8 @@ def get_KDA(glon, glat, RGC, R0=8.15 * u.kpc):
     dd = 4 * R0**2 * cosl**2 * cosb**2 - 4 * cosb**2 * (R0**2 - RGC**2)
 
     if dd.value < 0:
-        print('Negative discriminant in kinematic distance formula.')
-        print('Returning tangent.')
+        print('Warning: Negative discriminant in kinematic distance formula. '
+              + 'Returning tangent.')
         dT = RR / (2 * cosb**2)
         return np.array([dT.value, dT.value]) * dT.unit
     else:
