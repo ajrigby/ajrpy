@@ -444,8 +444,14 @@ def get_KDA(glon, glat, RGC, R0=8.15 * u.kpc):
     # Discriminant
     dd = 4 * R0**2 * cosl**2 * cosb**2 - 4 * cosb**2 * (R0**2 - RGC**2)
 
-    dN = (RR - np.sqrt(dd)) / (2 * cosb**2)  # Near distance
-    dF = (RR + np.sqrt(dd)) / (2 * cosb**2)  # Far distance
+    if dd.value < 0:
+        print('Negative discriminant in kinematic distance formula.')
+        print('Returning tangent.')
+        dT = RR / (2 * cosb**2)
+        return np.array([dT.value, dT.value]) * dT.unit
+    else:
+        dN = (RR - np.sqrt(dd)) / (2 * cosb**2)  # Near distance
+        dF = (RR + np.sqrt(dd)) / (2 * cosb**2)  # Far distance
 
     return np.array([dN.value, dF.value]) * dN.unit
 
