@@ -9,8 +9,7 @@ pip install git+https://github.com/ajrigby/ajrpy.git
 ```
 
 ## Usage
-Most of the useful functions are located within the astrotools module. All functions have a docstring
-which allows you to examine their usage, for example:
+Most of the useful functions are located within the astrotools module. All functions have a docstring which allows you to examine their usage, for example:
 
 ```python
 import ajrpy.astrotools as ajr
@@ -93,6 +92,10 @@ header = ajr.GalacticHeader(coords_in=(lcen, bcen, lsize, bsize, pixsize, bunit)
 `GalactocentricDistance` - Returns the Galactocentric distance of an object give longitude and velocity \
 `Gaussian` - function to plot a Gaussian curve \
 `get_aspect` - Get the aspect ratio of a pair of axes \
+`get_KDA` - Return the near/far kinematic distance for give (l, b, RGC) \
+`get_KDnear` - Return the near kinematic distance for given (l, b, v) \
+`get_KDfar` - Return the far kinematic distance for given (l, b, v) \
+`get_RGC` - Calculate RGC given (l, b, v) \
 `index2vel` - Find the velocity of a given index for a spectrum or cube \
 `Jy2K` - convert astropy quantity from units of Jy to K \
 `K2Jy` - convert astropy quantity from units of K to Jy \

@@ -41,8 +41,12 @@ from sklearn.cluster import AgglomerativeClustering
 #   friends_of_friends
 #   GalacticHeader - creates a 2D Galactic coordinate header, or converts ICRS
 #   GalactocentricDistance - calculate RGC given l,b,v or l,b,d
-#   Gaussian
 #   get_aspect
+#   get_KDA - Return the near/far kinematic distance for give (l, b, RGC)
+#   get_KDnear - Return the near kinematic distance for (l, b, v) coodinate
+#   get_KDfar - Return the far kinematic distance for (l, b, v) coodinate
+#   get_RGC - Calculate RGC given (l, b, v)
+#   Gaussian
 #   index2vel - converts an array index to a velocity given a cube header
 #   Jy2K - converts Jansky per beam to Kelvin
 #   K2Jy - converts Kelvin to Jansky per beam
@@ -416,6 +420,95 @@ def get_aspect(ax=None):
     aspect = axes_ratio / ax.get_data_ratio()
 
     return aspect
+
+
+def get_KDA(glon, glat, RGC, R0=8.15 * u.kpc):
+    """
+    Determine the near and far kinematic distances from the quadratic formula
+    following equation 4.9 from my thesis.
+
+    Arguments:
+        glon - Galactic longitude (as astropy quantity)
+        glat - Galactic latitude (as astropy quantity)
+        RGC - Galactocentric radius (as astropy quantity)
+
+    Returns:
+        Astropy quantity array containing [near distance, far distance]
+    """
+
+    cosb = np.cos(glat)
+    cosl = np.cos(glon)
+
+    RR = 2 * R0 * cosl * cosb
+
+    # Discriminant
+    dd = 4 * R0**2 * cosl**2 * cosb**2 - 4 * cosb**2 * (R0**2 - RGC**2)
+
+    dN = (RR - np.sqrt(dd)) / (2 * cosb**2)  # Near distance
+    dF = (RR + np.sqrt(dd)) / (2 * cosb**2)  # Far distance
+
+    return np.array([dN.value, dF.value]) * dN.unit
+
+
+def get_KDnear(glon, glat, vlsr):
+    """
+    Wrapper to get the near kinematic distance for a given l, b, v coordinate
+    Arguments:
+        glon - Galactic longitude (as astropy quantity)
+        glat - Galactic latitude (as astropy quantity)
+        vlsr - Radial velocity (as astropy quantity)
+    Returns:
+        Near kinematic distance in kpc
+    """
+    RGCi = get_RGC(glon, glat, vlsr)
+
+    return get_KDA(glon, glat, RGCi)[0]
+
+
+def get_KDfar(glon, glat, vlsr):
+    """
+    Wrapper to get the far kinematic distance for a given l, b, v coordinate
+    Arguments:
+        glon - Galactic longitude (as astropy quantity)
+        glat - Galactic latitude (as astropy quantity)
+        vlsr - Radial velocity (as astropy quantity)
+    Returns:
+        Far kinematic distance in kpc
+    """
+    RGCi = get_RGC(glon, glat, vlsr)
+
+    return get_KDA(glon, glat, RGCi)[1]
+
+
+def get_RGC(glon, glat, vlsr, 
+            R0=8.15 * u.kpc,
+            omega0 = 30.32 * u.km / u.s / u.kpc):
+    """
+    Calulate the Galactocentric radius for an l, b, v coordinate
+
+    Arguments:
+        glon
+        glat
+        vlsr
+    Returns:
+        Galactocentric radius to the nearest 10 pc
+
+    Notes:
+        - Follows Equation 4.7 from my thesis.
+        - Values for R0, omega0 from Reid+19
+        - Sampled range of RGC are between 0 and 30 kpc.
+    """
+
+    RGC = np.arange(0, 30, step=1E-2)[1:] * u.kpc
+    rotcurve = [RotationCurve(rad.value).value for rad in RGC]
+    vcirc = np.array(rotcurve) * u.km / u.s
+    OmegaCurve = vcirc / RGC
+    omega = omega0 + vlsr / (R0 * np.sin(glon) * np.cos(glat))
+    diff = np.abs(OmegaCurve - omega)
+    index = np.nanargmin(diff)
+    best_RGC = RGC[index]
+
+    return best_RGC.to('kpc')
 
 
 def hessian(x):
@@ -911,8 +1004,13 @@ def wcscutout(map_in, wcs_in, box, frame='galactic'):
         map_cutout, wcs_cutout
     """
     cenl, cenb, sizel, sizeb = box
-    cutcen = SkyCoord(cenl * u.degree, cenb * u.degree, frame=frame)
-    cutsize = u.Quantity((sizeb, sizel), u.degree)
+    assert cenl.unit.is_equivalent(u.deg), "cenl must have astropy angle units"
+    assert cenb.unit.is_equivalent(u.deg), "cenb must have astropy angle units"
+    assert sizel.unit.is_equivalent(u.deg), "sizel must have astropy angle units"
+    assert sizeb.unit.is_equivalent(u.deg), "sizeb must have astropy angle units"
+
+    cutcen = SkyCoord(cenl, cenb, frame=frame)
+    cutsize = u.Quantity((sizeb, sizel))
     cutout = Cutout2D(map_in, cutcen, cutsize, wcs=wcs_in)
 
     return cutout.data, cutout.wcs
